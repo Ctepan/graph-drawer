@@ -8,19 +8,105 @@
 </head>
 <body>
     <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
         #c1 {
             width: 500px;
             height: 500px;
             border: 1px solid black;
+            background-color: white;
+        }
+        
+        .body {
+            display: flex;
+            flex-flow: row wrap;
+            background-color: crimson;
+        }
+
+        .article {
+            margin: 16px;
+        }
+        
+        .main {
+            flex: 0 0 auto;
+            margin: 0 auto;
+        }
+
+        .aside {
+            flex: 1 0 auto;
+            margin: 16px;
+            background-color:rgb(255, 247, 145);
+            border-radius: 2px;
+            padding: 16px;
+        }
+
+        .label {
+            margin: 0 0 4px;
+        }
+
+        .input-block {
+            display: block;
+            margin: 0 0 8px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 8px;
+            background-color: white;
+            border: 1px solid black;
+            border-radius: 5px;
+            font-size: 16px;
+            user-select: none;
+            cursor: pointer; 
         }
     </style>
-    <canvas id="c1" width="500" height="500"></canvas>
-    <input type="file" id="files">
-    <div id="list"></div>
+    <div class="body">
+        <div class="main">
+            <div class="article">
+                <canvas id="c1" width="500" height="500"></canvas>
+            </div>
+        </div>
+        <div class="aside">
+            <div class="input-block">
+                <div class="label">Выбрать JSON с графом:</div>
+                <input type="file" id="files">
+            </div>
+            <div class="input-block">
+                <div class="btn" tabindex="0">Вернуть граф к началу</div>
+            </div>
+        </div>
+    </div>
     <script>
         const canvas = document.getElementById('c1');
         const ctx = canvas.getContext('2d');
         const [CTX_HEIGHT, CTX_WIDTH] = [500, 500];
+
+        let drag = false;
+        let dragStart;
+        let dragEnd;
+        let scale = 1;
+        let originx = 0;
+        let originy = 0;
+
+        function clear() {
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.restore();
+        }
+
+        function resetTransform() {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            draw();
+            scale = 1;
+            originx = 0;
+            originy = 0;
+        }
 
         class Vertex {
             constructor(name, x, y) {
@@ -41,6 +127,7 @@
             }
         }
         const graph = {
+            drawn: false,
             canvas: canvas,
             ctx: ctx,
             edges: [],
@@ -50,9 +137,12 @@
                 this.edges = [];
                 this.vertices = [];
                 this.connections = new Map();
-                ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
                 this.processPairs(pairs);
                 this.takeCoordsToVerticies();
+                this.drawEdges();
+                this.drawn = true;
+            },
+            updateGraph: function() {
                 this.drawEdges();
             },
             drawEdge: function(edge) {
@@ -132,6 +222,73 @@
                 reader.readAsText(f);
             }
         }, false);
+
+        document.querySelector('.btn').addEventListener('click', resetTransform);
+
+        function draw() {
+            graph.updateGraph();
+        }
+
+        canvas.addEventListener('mousedown', function(event) {
+            dragStart = {
+                x: event.pageX - canvas.offsetLeft,
+                y: event.pageY - canvas.offsetTop
+            }
+
+            drag = true;
+        });
+
+        canvas.addEventListener('mouseup', function(event) {
+            drag = false;
+        });
+
+        canvas.addEventListener('mousemove', function(event) {
+            if (drag) {
+                dragEnd = {
+                    x: event.pageX - canvas.offsetLeft,
+                    y: event.pageY - canvas.offsetTop
+                }
+
+                // ctx.translate(dragEnd.x - dragStart.x, dragEnd.y - dragStart.y);
+                ctx.translate(
+                    ( dragEnd.x / scale - dragStart.x / scale ),
+                    ( dragEnd.y / scale - dragStart.y / scale )
+                );
+                dragStart = dragEnd;
+                clear();
+                draw();
+            }
+
+        });
+
+        canvas.addEventListener('wheel', function(event) {
+            event.preventDefault();
+
+            let mousex = event.clientX - canvas.offsetLeft;
+            let mousey = event.clientY - canvas.offsetTop;
+            let wheel = event.deltaY / 20;
+
+            let zoom = 1 + wheel / 2;
+
+            ctx.translate(
+                originx,
+                originy
+            );
+
+            ctx.scale(zoom, zoom);
+            ctx.translate(
+                -( mousex / scale + originx - mousex / ( scale * zoom )),
+                -( mousey / scale + originy - mousey / ( scale * zoom ))
+            );
+
+            originx = ( mousex / scale + originx - mousex / ( scale * zoom ));
+            originy = ( mousey / scale + originy - mousey / ( scale * zoom ));
+            scale *= zoom;
+
+            clear();
+            draw();
+        });
+
     </script>
 </body>
 </html>
