@@ -55,7 +55,7 @@
 
         .btn {
             display: inline-block;
-            padding: 8px;
+            padding: 4px 8px;
             background-color: white;
             border: 1px solid black;
             border-radius: 5px;
@@ -73,10 +73,33 @@
         <div class="aside">
             <div class="input-block">
                 <div class="label">Выбрать JSON с графом:</div>
-                <input type="file" id="files">
+                <input  class="btn" type="file" id="files">
             </div>
             <div class="input-block">
-                <div class="btn" tabindex="0">Вернуть граф к началу</div>
+                <input type="text" data-role="grSize" placeholder="Размерность" tabindex="0">
+                <input type="text" data-role="edgeProb" placeholder="Вероятность" tabindex="0">
+                <div class="btn" data-role="genGr" tabindex="0">Сгенерировать граф</div>
+            </div>
+            <div class="input-block">
+                <div class="btn" data-role="resetTransform" tabindex="0">Вернуть граф к началу</div>
+            </div>
+            <div class="input-block">
+                <div class="btn" data-role="fullClear" tabindex="0">Очистить</div>
+            </div>
+            <div class="input-block">
+                <label>Вероятность кроссинговера: <input class="text-input" data-role="cross" tabindex="0"></label>
+            </div>
+            <div class="input-block">
+                <label>Вероятность мутации: <input class="text-input" data-role="mutation" tabindex="0"></label>
+            </div>
+            <div class="input-block">
+                <label>Количество поколений: <input class="text-input" data-role="gen" tabindex="0"></label>
+            </div>
+            <div class="input-block">
+                <label>Размер популяции: <input class="text-input" data-role="popul" tabindex="0"></label>
+            </div>
+            <div class="input-block">
+                <div class="btn" data-role="start" tabindex="0">Начать</div>
             </div>
         </div>
     </div>
@@ -97,6 +120,15 @@
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.restore();
+        }
+
+        function fullClear() {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            scale = 1;
+            originx = 0;
+            originy = 0;
+            graph.destroy();
         }
 
         function resetTransform() {
@@ -120,21 +152,30 @@
             }
         }
         class Edge {
-            constructor(a, b, value) {
+            constructor(a, b, value, highlighted=false) {
                 this.a = a;
                 this.b = b;
                 this.value = value;
+                this.highlighted = highlighted;
+            }
+
+            setHighlightedOn() {
+                this.highlighted = true;
+            }
+
+            setHighlightedOff() {
+                this.highlighted = false;
             }
         }
         const graph = {
             drawn: false,
             canvas: canvas,
             ctx: ctx,
-            edges: [],
+            edges: new Map(),
             vertices: [],
             connections: new Map(),
-            drawGraph: function(pairs) {
-                this.edges = [];
+            draw: function(pairs) {
+                this.edges = new Map();
                 this.vertices = [];
                 this.connections = new Map();
                 this.processPairs(pairs);
@@ -142,27 +183,38 @@
                 this.drawEdges();
                 this.drawn = true;
             },
-            updateGraph: function() {
+            update: function() {
                 this.drawEdges();
             },
+            destroy: function() {
+                this.edges = new Map();
+                this.vertices = [];
+                this.connections = new Map();
+                this.drawn = false;
+            },
             drawEdge: function(edge) {
+                if (edge.highlighted) {
+                    this.ctx.strokeStyle = 'red';
+                }
+
                 this.ctx.beginPath();
+                ctx.lineWidth = 1 / scale;
                 this.ctx.moveTo(edge.a.x, edge.a.y);
                 this.ctx.lineTo(edge.b.x, edge.b.y);
                 this.ctx.closePath();
                 this.ctx.stroke();
-                this.ctx.fillStyle = 'red';
+                this.ctx.strokeStyle = 'black';
             },
             drawVertex: function(vertex) {
                 ctx.fillStyle = 'black';
                 ctx.beginPath();
-                ctx.arc(vertex.x, vertex.y, 3, 0, 2 * Math.PI);
+                ctx.arc(vertex.x, vertex.y, 1 / scale, 0, 2 * Math.PI);
                 ctx.fill();
-                ctx.font = '16px sans-serif';
+                ctx.font = `${11}px sans-serif'`;
                 ctx.fillText(vertex.name, vertex.x, vertex.y);
             },
             drawEdges: function() {
-                this.edges.forEach(x=>{
+                this.edges.forEach(x => {
                     this.drawEdge(x);
                     this.drawVertex(x.a);
                     this.drawVertex(x.b);
@@ -170,7 +222,7 @@
             },
             processPairs: function(pairList) {
                 const vSet = new Set();
-                const eList = [];
+                const eList = new Map();
 
                 for (let i of pairList) {
                     vSet.add(i[0]);
@@ -190,7 +242,7 @@
                     const vObj2 = vMap.get(i[1]);
                     this.connections.get(vObj1).push(vObj2);
                     this.connections.get(vObj2).push(vObj1);
-                    eList.push(new Edge(vObj1, vObj2, i[2]));
+                    eList.set(i, new Edge(vObj1, vObj2, i[2], i[3]));
                 }
                 
                 this.vertices = [...this.connections.keys()];
@@ -208,6 +260,9 @@
             }
         }
 
+        let inputGraph = [[0, 1, 1], [0, 2, 1], [0, 3, 1], [3, 4, 1], [4, 5, 1], [2, 5, 100]];
+        let grSize = 6;
+
         document.getElementById('files').addEventListener('change', function (evt) {
             const files = evt.target.files;
             const output = [];
@@ -216,17 +271,74 @@
                 const reader = new FileReader();
 
                 reader.addEventListener("loadend", function(e) {
-                    graph.drawGraph(JSON.parse(e.target.result));
+                    inputGraph = JSON.parse(e.target.result);
+                    clear();
+                    graph.destroy();
+                    graph.draw(inputGraph);
                 });
 
                 reader.readAsText(f);
             }
         }, false);
 
-        document.querySelector('.btn').addEventListener('click', resetTransform);
+        document.querySelector('[data-role="resetTransform"]').addEventListener('click', resetTransform);
+        document.querySelector('[data-role="fullClear"]').addEventListener('click', fullClear);
+
+        document.querySelector('[data-role="genGr"]').addEventListener('click', function() {
+            const n = parseInt(document.querySelector('[data-role="grSize"]').value);
+            const p = parseFloat(document.querySelector('[data-role="edgeProb"]').value);
+
+            function generateGraph (n, p) {
+                let res = [];
+
+                for (let i = 0; i < n; i++) {
+                    for (let j = i + 1; j < n; j++) {
+                        if (p >= Math.random()) {
+                            res.push([i, j, 1 + ~~(Math.random() * 10)]);
+                        }
+                    }
+                }
+
+                return res;
+            }
+
+            function checkGraphSize (edges, n) {
+                let verts = new Set();
+
+                for (let e of edges) {
+                    verts.add(e[0]);
+                    verts.add(e[1]);
+                }
+
+                return [...verts].length === n;
+            }
+
+            let edges = generateGraph(n, p);
+
+            while (!checkGraphSize(edges, n)) {
+                edges = generateGraph(n, p);
+            }
+
+            inputGraph = edges;
+            grSize = n;
+            clear();
+            graph.destroy();
+            graph.draw(inputGraph);
+        });
+
+        document.querySelector('[data-role="start"]').addEventListener('click', ()=> {
+            let cP = document.querySelector('[data-role="cross"]').value;
+            let mP = document.querySelector('[data-role="mutation"]').value;
+            let gen = document.querySelector('[data-role="gen"]').value;
+            let population = document.querySelector('[data-role="popul"]').value;
+            document.querySelectorAll('.aside').forEach(e=>e.style.pointerEvents = 'none');
+            document.querySelectorAll('input').forEach(e=>e.setAttribute("disabled", "true"));
+            genAlg(graph, inputGraph, cP, mP, gen, population, grSize);
+        });
+
 
         function draw() {
-            graph.updateGraph();
+            graph.update();
         }
 
         canvas.addEventListener('mousedown', function(event) {
@@ -289,6 +401,231 @@
             draw();
         });
 
+        function genAlg(dGraph, graph, cP=1.0, mP=1.0, maxGen=10, popSize=10, graphSize){
+            function fitness (arr, graph) {
+                return arr.reduce((sum, x, i) => sum + x * graph[i][2], 0);
+            }
+
+            function crossover (chr1, chr2) {
+                const slicePos = 1 + Math.round(Math.random() * (chr1.length - 2));
+                return [
+                    [...chr1.slice(0, slicePos), ...chr2.slice(slicePos)],
+                    [...chr2.slice(0, slicePos), ...chr1.slice(slicePos)]
+                ];
+            }
+
+            function mutate (chr) {
+                let res = [...chr];
+                if (mP >= Math.random()) {
+                    const slicePos = Math.round(Math.random() * (chr.length - 2));
+                    res[slicePos] = chr[slicePos + 1];
+                    res[slicePos + 1] = chr[slicePos];
+                }
+                return res;
+            }
+
+            function getRandomPair (arr) {
+                const len = arr.length;
+                
+                if (len < 2) {
+                    return;
+                }
+
+                let first = Math.round(Math.random() * (len - 1));
+                let second = Math.round(Math.random() * (len - 1));
+
+                while (first === second) {
+                    second = Math.round(Math.random() * (len - 1));
+                }
+                
+                return [arr[first], arr[second]];
+            }
+
+            function updateBestSolution (bestSolution, newSolutions) {
+                let res = bestSolution;
+                
+                for (const sol of newSolutions) {
+                    // console.log('comp', bestSolution, res ? res[0]:res, sol[0]);
+                    if (!res || res[0] > sol[0]) {
+                        res = sol;
+                    }
+                }
+
+                return res;
+            }
+
+            function selection (arr, popSize, fitness, graph) {
+                const half = Math.round(arr.length / 2);
+                let trunced = arr.sort((a, b) => fitness(a, graph) - fitness(b, graph)).slice(0, half);
+                let i = 0;
+                let res = [];
+
+                while (res.length < popSize) {
+                    res.push(trunced[Math.floor(Math.random() * half)]);
+                }
+
+                return res;
+            }
+
+            function makePopulation (graph, popSize, a, b) {          
+                const population = [];
+
+                while (population.length <= popSize) {
+                    let temp = graph.map(() => Math.round(Math.random()));
+
+                    // if (isPath(a, b, temp, graph)) {
+                        population.push(temp);
+                    // }
+                }
+                return population;
+            }
+            
+            function isPath (a, b, chr, graph) {
+                let includedEdges = graph.filter((x, i) => chr[i]);
+                let includedVerts = new Set();
+                let inputV = new Set();
+                let outputV = new Set();
+
+                for (let e of includedEdges) {
+                    includedVerts.add(e[0]);
+                    includedVerts.add(e[1]);
+                }
+
+                let verts = new Set();
+                for (let e of graph) {
+                    verts.add(e[0]);
+                    verts.add(e[1]);
+                }
+
+                let graphM = makeGraphMatrix(includedEdges, verts.size);
+
+                let connCount = new Map(graphM.map((_, v) => [v, graphM[v].reduce((sum, x)=> sum + (x === -1 ? 0 : 1), 0)]));
+
+                if (connCount.get(a) !== 1 || connCount.get(b) !== 1) {
+                    return;
+                }
+
+                for (let [v, count] of connCount) {;
+                    if (v !== a && v !== b) {
+                        if (count !== 0 && count !== 2) {
+                            return;
+                        }
+                    }
+                }
+
+                let path = new Set();
+                path.add(a);
+
+                let nextV = findNext(a, path, graphM);
+                if (nextV !== false) {
+                    path.add(nextV);
+                }
+
+                while (nextV !== false) {
+                    nextV = findNext(nextV, path, graphM);
+
+                    if (nextV !== false) {
+                        path.add(nextV);
+                    }
+                }
+
+                if (path.has(b) && path.size === includedVerts.size) {
+                    return true;
+                }
+
+                return false;
+            }
+
+            function findNext (v, path, graphM) {
+                for (let u in graphM[v]) {
+                    if (graphM[v][u] !== -1 && !path.has(parseInt(u))) {
+                        return parseInt(u);
+                    }
+                }
+                return false;
+            }
+
+            function makeGraphMatrix (graph, size) {
+                let res = [];
+                for (let i = 0; i < size; i++) {
+                    let row = [];
+                    
+                    for (let j = 0; j < size; j++) {
+                        row.push(-1);
+                    }
+                    res.push(row);
+                }
+
+                for (let e of graph) {
+                    res[e[0]][e[1]] = e[2];
+                    res[e[1]][e[0]] = e[2];
+                }
+
+                return res;
+            }
+
+            function makeSolutionGraph (graph, solution) {
+                return graph.map((x, i) => [...x, solution[i]]);
+            }
+            
+            let bestSolution;
+            let gen = 0;
+            let a = 0;
+            let b = grSize - 1;
+            let population = makePopulation(graph, popSize, a, b);
+            
+            function oneGeneration() {
+                gen++;
+
+                let p = 1;
+                let newPop = [];
+
+                while (p <= popSize) {
+                    p++;
+                    let parents = getRandomPair(population);
+                    let newPair = parents;
+                    if (cP >= Math.random()) {
+                        newPair = crossover(...newPair);
+                    }
+                    newPair = newPair.map(mutate);
+                    newPop.push(...newPair);
+                }
+                
+                let legalPop = newPop.filter(x => isPath(a, b, x, graph));
+
+                let values = legalPop.map((x) => [fitness(x, graph), x]);
+                // console.log('values', values);
+
+                if (values.length) {
+                    bestSolution = updateBestSolution(bestSolution, values);
+                    population = selection([...population, ...legalPop], popSize, fitness, graph);
+                }
+                
+                console.log(`gen: ${gen} best: ${bestSolution ? bestSolution[0] : 'Нет'}`);
+                if (bestSolution) {
+                    console.log(`best chr:`);
+                    console.log(bestSolution[1]);
+                    console.log(`path:`);
+                    console.log(graph.filter((x, i) => bestSolution[1][i]));
+                    console.log(`graph:`);
+                    console.log(graph);
+                }
+
+                if (gen < maxGen) {
+                    if (bestSolution) {
+                        clear();
+                        dGraph.destroy();
+                        dGraph.draw(makeSolutionGraph(graph, bestSolution[1]));
+                    }
+                    setTimeout(oneGeneration, 0);
+                } else {
+                    document.querySelectorAll('.aside').forEach(e=>e.style.pointerEvents = 'auto');
+                    document.querySelectorAll('input').forEach(e=>e.removeAttribute("disabled"));
+                }
+            }
+
+            oneGeneration();
+        }
     </script>
 </body>
 </html>
