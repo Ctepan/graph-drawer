@@ -55,10 +55,10 @@
 
         .btn {
             display: inline-block;
-            padding: 4px 8px;
+            padding: 2px 4px;
             background-color: white;
             border: 1px solid black;
-            border-radius: 5px;
+            border-radius: 2px;
             font-size: 16px;
             user-select: none;
             cursor: pointer; 
@@ -86,6 +86,16 @@
             <div class="input-block">
                 <div class="btn" data-role="fullClear" tabindex="0">Очистить</div>
             </div>
+            
+            <hr>
+            <div class="input-block">
+                <label>Количество поколений: <input class="text-input" data-role="gen" tabindex="0"></label>
+            </div>
+            <div class="input-block">
+                <label>Размер популяции: <input class="text-input" data-role="popul" tabindex="0"></label>
+            </div>
+            
+            <hr>
             <div class="input-block">
                 <label>Вероятность кроссинговера: <input class="text-input" data-role="cross" tabindex="0"></label>
             </div>
@@ -93,13 +103,15 @@
                 <label>Вероятность мутации: <input class="text-input" data-role="mutation" tabindex="0"></label>
             </div>
             <div class="input-block">
-                <label>Количество поколений: <input class="text-input" data-role="gen" tabindex="0"></label>
-            </div>
-            <div class="input-block">
-                <label>Размер популяции: <input class="text-input" data-role="popul" tabindex="0"></label>
-            </div>
-            <div class="input-block">
                 <div class="btn" data-role="start" tabindex="0">Начать</div>
+            </div>
+
+            <hr>
+            <div class="input-block">
+                <label>Количество клонов: <input class="text-input" data-role="clones" tabindex="0"></label>
+            </div>
+            <div class="input-block">
+                <div class="btn" data-role="startIm" tabindex="0">Начать</div>
             </div>
         </div>
     </div>
@@ -336,6 +348,15 @@
             genAlg(graph, inputGraph, cP, mP, gen, population, grSize);
         });
 
+        document.querySelector('[data-role="startIm"]').addEventListener('click', ()=> {
+            let clones = document.querySelector('[data-role="clones"]').value;
+            let gen = document.querySelector('[data-role="gen"]').value;
+            let population = document.querySelector('[data-role="popul"]').value;
+            document.querySelectorAll('.aside').forEach(e=>e.style.pointerEvents = 'none');
+            document.querySelectorAll('input').forEach(e=>e.setAttribute("disabled", "true"));
+            immuneAlg(graph, inputGraph, gen, population, grSize, clones);
+        });
+
 
         function draw() {
             graph.update();
@@ -401,7 +422,212 @@
             draw();
         });
 
-        function genAlg(dGraph, graph, cP=1.0, mP=1.0, maxGen=10, popSize=10, graphSize){
+        function immuneAlg(dGraph, graph, maxGen=10, popSize=10, graphSize, clonesNum=10) {
+            let gen = 0;
+            let a = 0;
+            let b = grSize - 1;
+
+            function isPath (a, b, chr, graph) {
+                let includedEdges = graph.filter((x, i) => chr[i]);
+                let includedVerts = new Set();
+                let inputV = new Set();
+                let outputV = new Set();
+
+                for (let e of includedEdges) {
+                    includedVerts.add(e[0]);
+                    includedVerts.add(e[1]);
+                }
+
+                let verts = new Set();
+                for (let e of graph) {
+                    verts.add(e[0]);
+                    verts.add(e[1]);
+                }
+
+                let graphM = makeGraphMatrix(includedEdges, verts.size);
+
+                let connCount = new Map(graphM.map((_, v) => [v, graphM[v].reduce((sum, x)=> sum + (x === -1 ? 0 : 1), 0)]));
+
+                if (connCount.get(a) !== 1 || connCount.get(b) !== 1) {
+                    return;
+                }
+
+                for (let [v, count] of connCount) {;
+                    if (v !== a && v !== b) {
+                        if (count !== 0 && count !== 2) {
+                            return;
+                        }
+                    }
+                }
+
+                let path = new Set();
+                path.add(a);
+
+                let nextV = findNext(a, path, graphM);
+                if (nextV !== false) {
+                    path.add(nextV);
+                }
+
+                while (nextV !== false) {
+                    nextV = findNext(nextV, path, graphM);
+
+                    if (nextV !== false) {
+                        path.add(nextV);
+                    }
+                }
+
+                if (path.has(b) && path.size === includedVerts.size) {
+                    return true;
+                }
+
+                return false;
+            }
+
+            function findNext (v, path, graphM) {
+                for (let u in graphM[v]) {
+                    if (graphM[v][u] !== -1 && !path.has(parseInt(u))) {
+                        return parseInt(u);
+                    }
+                }
+                return false;
+            }
+
+            function makeGraphMatrix (graph, size) {
+                let res = [];
+                for (let i = 0; i < size; i++) {
+                    let row = [];
+                    
+                    for (let j = 0; j < size; j++) {
+                        row.push(-1);
+                    }
+                    res.push(row);
+                }
+
+                for (let e of graph) {
+                    res[e[0]][e[1]] = e[2];
+                    res[e[1]][e[0]] = e[2];
+                }
+
+                return res;
+            }
+
+            function makeSolutionGraph (graph, solution) {
+                return graph.map((x, i) => [...x, solution[i]]);
+            }
+
+            function fitness (arr, graph) {
+                return arr.reduce((sum, x, i) => sum + x * graph[i][2], 0);
+            }
+
+            function phi (arr, graph) {
+                return -fitness (arr, graph);
+            }
+
+            function countPhi (population, graph) {
+                return population.map(x => ({cell: x, phi: phi(x, graph)}));
+            }
+
+            function makePopulation (graph, popSize) {          
+                const population = [];
+
+                while (population.length <= popSize) {
+                    let temp = graph.map(() => Math.round(Math.random()));
+
+                    population.push(temp);
+                }
+
+                return countPhi(population, graph);
+            }
+
+            function selectBest (populationPhi) {
+                const sortedPopul = populationPhi.sort((a, b) => b.phi - a.phi);
+
+                return sortedPopul.slice(0, Math.floor(sortedPopul.length / 2));
+            }
+
+            function makeClones (populationPhi, maxClones) {
+                populationPhi.forEach(function(x) {
+                    x.clones = [];
+                    for (let i = 0; i < maxClones; i++) {
+                        x.clones.push({cell: [...x.cell], phi: x.phi});
+                    }
+                });
+            }
+
+            function alpha (r, cell) {
+                return Math.exp(r * cell.phi);
+            }
+
+            function mutate (p, graph) {
+                return countPhi([p.cell.map(x => alpha(0.1, x) < Math.random() ?  x - 1 : x)], graph)[0];
+            }
+            
+
+            let population = makePopulation(graph, popSize, a, b);
+            let bestSolution;
+
+            function oneGeneration() {
+                gen++;
+
+                // const populationWithClones = makeClones(selectBest(population), clones);
+                makeClones(population, clonesNum);
+                const populationWithClones = population;
+
+                
+                for (let i in populationWithClones) {
+                    let bestClone;
+
+                    for (let clone of populationWithClones[i].clones) {
+                        let mutatedClone = mutate(clone, graph);
+                        if (!bestClone || bestClone.phi < mutatedClone.phi) {
+                            bestClone = mutatedClone;
+                        }
+                    }
+
+                    if (bestClone && bestClone.phi > populationWithClones[i].phi) {
+                        populationWithClones[i] = bestClone;
+                    }
+
+                    populationWithClones[i].clones = [];
+                }
+                
+                population = populationWithClones;
+
+                for (let p of population) {
+                    if (isPath(a, b, p.cell, graph)) {
+                        if (!bestSolution || bestSolution.phi > p.phi) {
+                            bestSolution = {cell: [...p.cell], phi: p.phi};
+                        }
+                    }
+                }
+
+                console.log(`gen: ${gen} best: ${bestSolution ? fitness(bestSolution.cell, graph) : 'Нет'}`);
+                if (bestSolution) {
+                    console.log(`best chr:`);
+                    console.log(bestSolution.cell);
+                    console.log(`path:`);
+                    console.log(graph.filter((x, i) => bestSolution.cell[i]));
+                    console.log(`graph:`);
+                    console.log(graph);
+                }
+
+                if (gen < maxGen) {
+                    if (bestSolution) {
+                        clear();
+                        dGraph.destroy();
+                        dGraph.draw(makeSolutionGraph(graph, bestSolution.cell));
+                    }
+                    setTimeout(oneGeneration, 0);
+                } else {
+                    document.querySelectorAll('.aside').forEach(e=>e.style.pointerEvents = 'auto');
+                    document.querySelectorAll('input').forEach(e=>e.removeAttribute("disabled"));
+                }
+            }
+
+            oneGeneration();
+        }
+
+        function genAlg(dGraph, graph, cP=1.0, mP=1.0, maxGen=10, popSize=10, graphSize) {
             function fitness (arr, graph) {
                 return arr.reduce((sum, x, i) => sum + x * graph[i][2], 0);
             }
